@@ -23,6 +23,6 @@ type Driver interface {
 	Open(cfg DBConfig) (Conn, error)
 	Quote(identifier string) string
 	Placeholder(n int) string
-	ParseAndCacheCond(op OpType, where *ConditionExpr, set *ConditionExpr) (string, error)
-	ParseNewCond(op OpType, where *ConditionExpr, set *ConditionExpr) (string, error)
+	ParseAndCacheCond(op OpType, where *ConditionExpr, set *ConditionExpr) (string, []interface{}, error)
+	ParseNewCond(op OpType, where *ConditionExpr, set *ConditionExpr) (string, []interface{}, error)
 }

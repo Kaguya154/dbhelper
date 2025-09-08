@@ -23,40 +23,45 @@ func TestCondBuilder(t *testing.T) {
 	queryCond := Cond().Eq("name", "Tom").Gt("age", 18).Like("email", "%@example.com").And(
 		Cond().Eq("status", "active").Or().Eq("status", "pending"),
 	).Build()
-	querySQL, err := driver.ParseAndCacheCond(types.OpQuery, queryCond, nil)
+	querySQL, queryArgs, err := driver.ParseAndCacheCond(types.OpQuery, queryCond, nil)
 	if err != nil {
 		t.Fatalf("解析条件失败: %v", err)
 	}
 	t.Logf("生成的查询SQL: %s", querySQL)
+	t.Logf("生成的查询Args: %v", queryArgs)
 
 	// 测试插入条件
 	insertCond := Cond().Eq("name", "Tom").Eq("age", 20).Build()
-	insertSQL, err := driver.ParseAndCacheCond(types.OpInsert, insertCond, nil)
+	insertSQL, insertArgs, err := driver.ParseAndCacheCond(types.OpInsert, insertCond, nil)
 	if err != nil {
 		t.Fatalf("解析插入条件失败: %v", err)
 	}
 	t.Logf("生成的插入SQL: %s", insertSQL)
+	t.Logf("生成的插入Args: %v", insertArgs)
 	// 测试更新条件
 	// SET age=21
 	updateData := Cond().Eq("age", 21).Build()
 	// WHERE name='Tom'
 	updateCond := Cond().Eq("name", "Tom").Build()
 
-	updateSQL, err := driver.ParseAndCacheCond(types.OpUpdate, updateCond, updateData)
+	updateSQL, updateArgs, err := driver.ParseAndCacheCond(types.OpUpdate, updateCond, updateData)
 	if err != nil {
 		t.Fatalf("解析更新条件失败: %v", err)
 	}
 	t.Logf("生成的更新SQL: %s", updateSQL)
+	t.Logf("生成的更新Args: %v", updateArgs)
+
 	// 测试删除条件
 	deleteCond := Cond().Eq("name", "Tom").Build()
-	deleteSQL, err := driver.ParseAndCacheCond(types.OpDelete, deleteCond, nil)
+	deleteSQL, deleteArgs, err := driver.ParseAndCacheCond(types.OpDelete, deleteCond, nil)
 	if err != nil {
 		t.Fatalf("解析删除条件失败: %v", err)
 	}
 	t.Logf("生成的删除SQL: %s", deleteSQL)
+	t.Logf("生成的删除Args: %v", deleteArgs)
 	// 测试Exec条件
 	execCond := Cond().Raw("CREATE TABLE test (id INTEGER PRIMARY KEY, name TEXT)").Build()
-	execSQL, err := driver.ParseAndCacheCond(types.OpExec, execCond, nil)
+	execSQL, _, err := driver.ParseAndCacheCond(types.OpExec, execCond, nil)
 	if err != nil {
 		t.Fatalf("解析Exec条件失败: %v", err)
 	}

@@ -26,32 +26,36 @@ func TestCondCache(t *testing.T) {
 		Like("email", "%@example.com").And(
 		Cond().Eq("status", "active").Or().Eq("status", "pending"),
 	).Build()
-	querySQL, err := driver.ParseAndCacheCond(types.OpQuery, queryCond, nil)
+	querySQL, quaryArgs, err := driver.ParseAndCacheCond(types.OpQuery, queryCond, nil)
 	if err != nil {
 		t.Fatalf("解析条件失败: %v", err)
 	}
 	t.Logf("生成的查询SQL: %s", querySQL)
+	t.Logf("生成的查询Args: %v", quaryArgs)
 	// 测试cache
-	cache, b := dbtools.GetCondCache(sqlite.DriverID, types.OpQuery, queryCond)
+	cache, argCache, b := dbtools.GetCondCache(sqlite.DriverID, types.OpQuery, queryCond)
 	if !b {
 		t.Fatalf("查询条件缓存未命中")
 	}
 	t.Logf("查询条件缓存命中: %s", cache)
+	t.Logf("查询条件缓存Args: %v", argCache)
 
 	// 测试插入条件
 	insertCond := Cond().Eq("name", "Tom").Eq("age", 20).
 		Build()
-	insertSQL, err := driver.ParseAndCacheCond(types.OpInsert, insertCond, nil)
+	insertSQL, insertArgs, err := driver.ParseAndCacheCond(types.OpInsert, insertCond, nil)
 	if err != nil {
 		t.Fatalf("解析插入条件失败: %v", err)
 	}
 	t.Logf("生成的插入SQL: %s", insertSQL)
+	t.Logf("生成的插入Args: %v", insertArgs)
 	// 测试cache
-	cache, b = dbtools.GetCondCache(sqlite.DriverID, types.OpInsert, insertCond)
+	cache, argCache, b = dbtools.GetCondCache(sqlite.DriverID, types.OpInsert, insertCond)
 	if !b {
 		t.Fatalf("插入条件缓存未命中")
 	}
 	t.Logf("插入条件缓存命中: %s", cache)
+	t.Logf("插入条件缓存Args: %v", argCache)
 }
 
 func mockCondition() *types.ConditionExpr {
@@ -82,7 +86,7 @@ func BenchmarkParseCond(b *testing.B) {
 	b.Run("ParseAndCacheCond", func(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_, err := driver.ParseAndCacheCond(types.OpUpdate, where, set)
+			_, _, err := driver.ParseAndCacheCond(types.OpUpdate, where, set)
 			if err != nil {
 				b.Fatalf("unexpected error: %v", err)
 			}
@@ -92,7 +96,7 @@ func BenchmarkParseCond(b *testing.B) {
 	b.Run("ParseNewCond", func(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_, err := driver.ParseNewCond(types.OpUpdate, where, set)
+			_, _, err := driver.ParseNewCond(types.OpUpdate, where, set)
 			if err != nil {
 				b.Fatalf("unexpected error: %v", err)
 			}

@@ -6,20 +6,26 @@ import (
 	"unsafe"
 )
 
-var globalCondCache sync.Map
-
-func SetCondCache(driver uint8, op types.OpType, expr *types.ConditionExpr, sql string) {
-	key := MakeCondCacheFastKey(driver, op, expr)
-	globalCondCache.Store(key, sql)
+type CondCache struct {
+	SQL  string
+	Args []interface{}
 }
 
-func GetCondCache(driver uint8, op types.OpType, expr *types.ConditionExpr) (string, bool) {
+var globalCondCache sync.Map
+
+func SetCondCache(driver uint8, op types.OpType, expr *types.ConditionExpr, sql string, args []interface{}) {
+	key := MakeCondCacheFastKey(driver, op, expr)
+	globalCondCache.Store(key, CondCache{SQL: sql, Args: args})
+}
+
+func GetCondCache(driver uint8, op types.OpType, expr *types.ConditionExpr) (string, []interface{}, bool) {
 	key := MakeCondCacheFastKey(driver, op, expr)
 	val, ok := globalCondCache.Load(key)
 	if !ok {
-		return "", false
+		return "", nil, false
 	}
-	return val.(string), true
+	cached := val.(CondCache)
+	return cached.SQL, cached.Args, true
 }
 
 func MakeCondCacheFastKey(driver uint8, op types.OpType, expr *types.ConditionExpr) uintptr {
