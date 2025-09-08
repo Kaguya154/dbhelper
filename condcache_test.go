@@ -2,14 +2,14 @@ package dbhelper
 
 import (
 	"dbhelper/dbtools"
-	"dbhelper/drivers"
+	"dbhelper/drivers/sqlite"
 	"dbhelper/types"
 	"testing"
 )
 
 func init() {
 	// 注册驱动
-	err := RegisterDriver(drivers.SQLiteDriverName, &drivers.SQLiteDriver{})
+	err := RegisterDriver(sqlite.DriverName, &sqlite.SQLiteDriver{})
 	if err != nil {
 		return
 	}
@@ -17,7 +17,7 @@ func init() {
 
 func TestCondCache(t *testing.T) {
 
-	driver, err := getDriver(drivers.SQLiteDriverName)
+	driver, err := getDriver(sqlite.DriverName)
 	if err != nil {
 		t.Fatalf("获取驱动失败: %v", err)
 	}
@@ -26,13 +26,13 @@ func TestCondCache(t *testing.T) {
 		Like("email", "%@example.com").And(
 		Cond().Eq("status", "active").Or().Eq("status", "pending"),
 	).Build()
-	querySQL, err := driver.ParseAndCacheCond("Query", queryCond, nil)
+	querySQL, err := driver.ParseAndCacheCond(types.OpQuery, queryCond, nil)
 	if err != nil {
 		t.Fatalf("解析条件失败: %v", err)
 	}
 	t.Logf("生成的查询SQL: %s", querySQL)
 	// 测试cache
-	cache, b := dbtools.GetCondCache(drivers.SQLiteDriverName, types.OpQuery, queryCond)
+	cache, b := dbtools.GetCondCache(sqlite.DriverID, types.OpQuery, queryCond)
 	if !b {
 		t.Fatalf("查询条件缓存未命中")
 	}
@@ -41,13 +41,13 @@ func TestCondCache(t *testing.T) {
 	// 测试插入条件
 	insertCond := Cond().Eq("name", "Tom").Eq("age", 20).
 		Build()
-	insertSQL, err := driver.ParseAndCacheCond("Insert", insertCond, nil)
+	insertSQL, err := driver.ParseAndCacheCond(types.OpInsert, insertCond, nil)
 	if err != nil {
 		t.Fatalf("解析插入条件失败: %v", err)
 	}
 	t.Logf("生成的插入SQL: %s", insertSQL)
 	// 测试cache
-	cache, b = dbtools.GetCondCache(drivers.SQLiteDriverName, types.OpInsert, insertCond)
+	cache, b = dbtools.GetCondCache(sqlite.DriverID, types.OpInsert, insertCond)
 	if !b {
 		t.Fatalf("插入条件缓存未命中")
 	}
@@ -66,7 +66,7 @@ func mockCondition() *types.ConditionExpr {
 
 func BenchmarkParseCond(b *testing.B) {
 
-	driver, err := getDriver(drivers.SQLiteDriverName)
+	driver, err := getDriver(sqlite.DriverName)
 	if err != nil {
 		b.Fatalf("获取驱动失败: %v", err)
 	}

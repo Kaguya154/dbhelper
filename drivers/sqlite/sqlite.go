@@ -1,11 +1,10 @@
-package drivers
+package sqlite
 
 import (
 	"database/sql"
 	"dbhelper/dbtools"
 	"dbhelper/types"
 	"fmt"
-	"log"
 	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -14,10 +13,11 @@ import (
 // SQLiteDriver 实现 dbhelper.Driver
 type SQLiteDriver struct{}
 
-const SQLiteDriverName = "sqlite3"
+const DriverName = "sqlite3"
+const DriverID uint8 = 0
 
 func (d *SQLiteDriver) Open(cfg types.DBConfig) (types.Conn, error) {
-	conn, err := sql.Open(SQLiteDriverName, cfg.DSN)
+	conn, err := sql.Open(DriverName, cfg.DSN)
 	if err != nil {
 		return nil, err
 	}
@@ -38,91 +38,108 @@ func (d *SQLiteDriver) Placeholder(n int) string {
 	return "?"
 }
 func (d *SQLiteDriver) ParseNewCond(op types.OpType, where *types.ConditionExpr, set *types.ConditionExpr) (string, error) {
-	var sqlStr string
+	var sb strings.Builder
+
 	switch op {
 	case types.OpInsert:
 		if where == nil || where.Op != types.OpAnd || len(where.Exprs) == 0 {
 			return "", fmt.Errorf("Insert data must be AND expr with fields")
 		}
-		cols := make([]string, 0, len(where.Exprs))
-		phs := make([]string, 0, len(where.Exprs))
-		for _, expr := range where.Exprs {
+		sb.WriteString("INSERT INTO %s (")
+		for i, expr := range where.Exprs {
 			if expr.Op != types.OpEq {
 				return "", fmt.Errorf("Insert only supports EQ expr")
 			}
-			cols = append(cols, d.Quote(expr.Field))
-			phs = append(phs, "?")
+			if i > 0 {
+				sb.WriteByte(',')
+			}
+			sb.WriteString(d.Quote(expr.Field))
 		}
-		sqlStr = fmt.Sprintf("INSERT INTO %%s (%s) VALUES (%s)", strings.Join(cols, ","), strings.Join(phs, ","))
+		sb.WriteString(") VALUES (")
+		for i := range where.Exprs {
+			if i > 0 {
+				sb.WriteByte(',')
+			}
+			sb.WriteByte('?')
+		}
+		sb.WriteByte(')')
 
 	case types.OpQuery:
-		where, _ := d.parseWhere(where)
-		if where != "" {
-			where = " WHERE " + where
+		sb.WriteString("SELECT * FROM %s")
+		if where != nil {
+			whereStr, _ := d.parseWhere(where)
+			if whereStr != "" {
+				sb.WriteString(" WHERE ")
+				sb.WriteString(whereStr)
+			}
 		}
-		sqlStr = fmt.Sprintf("SELECT * FROM %%s%s", where)
 
 	case types.OpUpdate:
 		if set == nil {
 			return "", fmt.Errorf("Update data cannot be empty")
 		}
-
-		setParts := []string{}
-
+		sb.WriteString("UPDATE %s SET ")
+		first := true
 		if set.Op == types.OpAnd && len(set.Exprs) > 0 {
 			for _, expr := range set.Exprs {
-				setParts = append(setParts, fmt.Sprintf("%s=?", d.Quote(expr.Field)))
+				if !first {
+					sb.WriteByte(',')
+				}
+				sb.WriteString(d.Quote(expr.Field))
+				sb.WriteString("=?")
+				first = false
 			}
 		} else if set.Op == types.OpEq && set.Field != "" {
-			// 单个字段更新
-			setParts = append(setParts, fmt.Sprintf("%s=?", d.Quote(set.Field)))
+			sb.WriteString(d.Quote(set.Field))
+			sb.WriteString("=?")
 		} else {
 			return "", fmt.Errorf("Invalid update data")
 		}
-
-		setClause := strings.Join(setParts, ",")
-
-		// where 子句
-		where, _ := d.parseWhere(where)
-		if where != "" {
-			where = " WHERE " + where
+		if where != nil {
+			whereStr, _ := d.parseWhere(where)
+			if whereStr != "" {
+				sb.WriteString(" WHERE ")
+				sb.WriteString(whereStr)
+			}
 		}
-		sqlStr = fmt.Sprintf("UPDATE %%s SET %s%s", setClause, where)
 
 	case types.OpDelete:
-		where, _ := d.parseWhere(where)
-		if where != "" {
-			where = " WHERE " + where
+		sb.WriteString("DELETE FROM %s")
+		if where != nil {
+			whereStr, _ := d.parseWhere(where)
+			if whereStr != "" {
+				sb.WriteString(" WHERE ")
+				sb.WriteString(whereStr)
+			}
 		}
-		sqlStr = fmt.Sprintf("DELETE FROM %%s%s", where)
 
 	case types.OpExec:
 		if where == nil || where.Op != types.OpRaw {
-
-			log.Printf("where: %+v", where)
 			return "", fmt.Errorf("Exec only supports OpRaw ConditionExpr")
 		}
 		execStr, ok := where.Value.(string)
 		if !ok {
 			return "", fmt.Errorf("Exec OpRaw ConditionExpr.Value must be string")
 		}
-		sqlStr = execStr
+		sb.WriteString(execStr)
 
 	default:
 		return "", fmt.Errorf("unsupported op: %s", op)
 	}
-	return sqlStr, nil
+
+	return sb.String(), nil
 }
+
 func (d *SQLiteDriver) ParseAndCacheCond(op types.OpType, where *types.ConditionExpr, set *types.ConditionExpr) (string, error) {
 	cacheKeyExpr := where
-	if sqlStr, ok := dbtools.GetCondCache(SQLiteDriverName, op, cacheKeyExpr); ok {
+	if sqlStr, ok := dbtools.GetCondCache(DriverID, op, cacheKeyExpr); ok {
 		return sqlStr, nil
 	}
 	cond, err := d.ParseNewCond(op, where, set)
 	if err != nil {
 		return "", err
 	}
-	dbtools.SetCondCache(SQLiteDriverName, op, cacheKeyExpr, cond)
+	dbtools.SetCondCache(DriverID, op, cacheKeyExpr, cond)
 	return cond, nil
 }
 

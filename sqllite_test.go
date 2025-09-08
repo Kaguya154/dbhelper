@@ -1,21 +1,21 @@
 package dbhelper
 
 import (
-	"dbhelper/drivers"
+	"dbhelper/drivers/sqlite"
 	"dbhelper/types"
 	"testing"
 )
 
 func init() {
 	// 注册驱动
-	err := RegisterDriver(drivers.SQLiteDriverName, &drivers.SQLiteDriver{})
+	err := RegisterDriver(sqlite.DriverName, &sqlite.SQLiteDriver{})
 	if err != nil {
 		return
 	}
 }
 
 func TestCondBuilder(t *testing.T) {
-	driver, err := getDriver(drivers.SQLiteDriverName)
+	driver, err := getDriver(sqlite.DriverName)
 	if err != nil {
 		t.Fatalf("获取驱动失败: %v", err)
 	}
@@ -23,7 +23,7 @@ func TestCondBuilder(t *testing.T) {
 	queryCond := Cond().Eq("name", "Tom").Gt("age", 18).Like("email", "%@example.com").And(
 		Cond().Eq("status", "active").Or().Eq("status", "pending"),
 	).Build()
-	querySQL, err := driver.ParseAndCacheCond("Query", queryCond, nil)
+	querySQL, err := driver.ParseAndCacheCond(types.OpQuery, queryCond, nil)
 	if err != nil {
 		t.Fatalf("解析条件失败: %v", err)
 	}
@@ -31,7 +31,7 @@ func TestCondBuilder(t *testing.T) {
 
 	// 测试插入条件
 	insertCond := Cond().Eq("name", "Tom").Eq("age", 20).Build()
-	insertSQL, err := driver.ParseAndCacheCond("Insert", insertCond, nil)
+	insertSQL, err := driver.ParseAndCacheCond(types.OpInsert, insertCond, nil)
 	if err != nil {
 		t.Fatalf("解析插入条件失败: %v", err)
 	}
@@ -42,21 +42,21 @@ func TestCondBuilder(t *testing.T) {
 	// WHERE name='Tom'
 	updateCond := Cond().Eq("name", "Tom").Build()
 
-	updateSQL, err := driver.ParseAndCacheCond("Update", updateCond, updateData)
+	updateSQL, err := driver.ParseAndCacheCond(types.OpUpdate, updateCond, updateData)
 	if err != nil {
 		t.Fatalf("解析更新条件失败: %v", err)
 	}
 	t.Logf("生成的更新SQL: %s", updateSQL)
 	// 测试删除条件
 	deleteCond := Cond().Eq("name", "Tom").Build()
-	deleteSQL, err := driver.ParseAndCacheCond("Delete", deleteCond, nil)
+	deleteSQL, err := driver.ParseAndCacheCond(types.OpDelete, deleteCond, nil)
 	if err != nil {
 		t.Fatalf("解析删除条件失败: %v", err)
 	}
 	t.Logf("生成的删除SQL: %s", deleteSQL)
 	// 测试Exec条件
 	execCond := Cond().Raw("CREATE TABLE test (id INTEGER PRIMARY KEY, name TEXT)").Build()
-	execSQL, err := driver.ParseAndCacheCond("Exec", execCond, nil)
+	execSQL, err := driver.ParseAndCacheCond(types.OpExec, execCond, nil)
 	if err != nil {
 		t.Fatalf("解析Exec条件失败: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestCondBuilder(t *testing.T) {
 
 func TestSQLiteDriver_CRUD(t *testing.T) {
 	db, err := Open(types.DBConfig{
-		Driver: drivers.SQLiteDriverName,
+		Driver: sqlite.DriverName,
 		DSN:    ":memory:",
 	})
 	if err != nil {
@@ -110,7 +110,7 @@ func TestSQLiteDriver_CRUD(t *testing.T) {
 // Tx测试
 func TestSQLiteDriver_Tx(t *testing.T) {
 	db, err := Open(types.DBConfig{
-		Driver: drivers.SQLiteDriverName,
+		Driver: sqlite.DriverName,
 		DSN:    ":memory:",
 	})
 	if err != nil {

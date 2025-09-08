@@ -2,19 +2,19 @@ package dbtools
 
 import (
 	"dbhelper/types"
-	"fmt"
 	"sync"
+	"unsafe"
 )
 
 var globalCondCache sync.Map
 
-func SetCondCache(driver string, op types.OpType, expr *types.ConditionExpr, sql string) {
-	key := MakeCondCacheKeyByPtr(driver, op, expr)
+func SetCondCache(driver uint8, op types.OpType, expr *types.ConditionExpr, sql string) {
+	key := MakeCondCacheFastKey(driver, op, expr)
 	globalCondCache.Store(key, sql)
 }
 
-func GetCondCache(driver string, op types.OpType, expr *types.ConditionExpr) (string, bool) {
-	key := MakeCondCacheKeyByPtr(driver, op, expr)
+func GetCondCache(driver uint8, op types.OpType, expr *types.ConditionExpr) (string, bool) {
+	key := MakeCondCacheFastKey(driver, op, expr)
 	val, ok := globalCondCache.Load(key)
 	if !ok {
 		return "", false
@@ -22,6 +22,9 @@ func GetCondCache(driver string, op types.OpType, expr *types.ConditionExpr) (st
 	return val.(string), true
 }
 
-func MakeCondCacheKeyByPtr(driver string, op types.OpType, expr *types.ConditionExpr) string {
-	return fmt.Sprintf("%s:%s:%p", driver, op.String(), expr)
+func MakeCondCacheFastKey(driver uint8, op types.OpType, expr *types.ConditionExpr) uintptr {
+	h := uintptr(unsafe.Pointer(expr)) // expr 指针
+	h ^= uintptr(op) << 56
+	h ^= uintptr(driver) << 48
+	return h
 }

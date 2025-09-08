@@ -30,16 +30,12 @@ func NewRows(data []map[string]interface{}) *Rows {
 	return &Rows{data: data, pos: -1}
 }
 
-type OpType string
+type OpType uint8
 
 const (
-	OpInsert OpType = "Insert"
-	OpQuery  OpType = "Query"
-	OpUpdate OpType = "Update"
-	OpDelete OpType = "Delete"
-	OpExec   OpType = "Exec"
+	OpInsert OpType = 0
+	OpQuery  OpType = 1
+	OpUpdate OpType = 2
+	OpDelete OpType = 3
+	OpExec   OpType = 4
 )
-
-func (op OpType) String() string {
-	return string(op)
-}
