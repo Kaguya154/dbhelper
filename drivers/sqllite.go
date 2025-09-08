@@ -2,6 +2,7 @@ package drivers
 
 import (
 	"database/sql"
+	"dbhelper/dbtools"
 	"dbhelper/types"
 	"fmt"
 	"log"
@@ -13,8 +14,10 @@ import (
 // SQLiteDriver 实现 dbhelper.Driver
 type SQLiteDriver struct{}
 
+const SQLiteDriverName = "sqlite3"
+
 func (d *SQLiteDriver) Open(cfg types.DBConfig) (types.Conn, error) {
-	conn, err := sql.Open("sqlite3", cfg.DSN)
+	conn, err := sql.Open(SQLiteDriverName, cfg.DSN)
 	if err != nil {
 		return nil, err
 	}
@@ -34,10 +37,10 @@ func (d *SQLiteDriver) Quote(identifier string) string {
 func (d *SQLiteDriver) Placeholder(n int) string {
 	return "?"
 }
-func (d *SQLiteDriver) ParseCond(op string, where *types.ConditionExpr, set *types.ConditionExpr) (string, error) {
-
+func (d *SQLiteDriver) ParseNewCond(op types.OpType, where *types.ConditionExpr, set *types.ConditionExpr) (string, error) {
+	var sqlStr string
 	switch op {
-	case "Insert":
+	case types.OpInsert:
 		if where == nil || where.Op != types.OpAnd || len(where.Exprs) == 0 {
 			return "", fmt.Errorf("Insert data must be AND expr with fields")
 		}
@@ -50,16 +53,16 @@ func (d *SQLiteDriver) ParseCond(op string, where *types.ConditionExpr, set *typ
 			cols = append(cols, d.Quote(expr.Field))
 			phs = append(phs, "?")
 		}
-		return fmt.Sprintf("INSERT INTO %%s (%s) VALUES (%s)", strings.Join(cols, ","), strings.Join(phs, ",")), nil
+		sqlStr = fmt.Sprintf("INSERT INTO %%s (%s) VALUES (%s)", strings.Join(cols, ","), strings.Join(phs, ","))
 
-	case "Query":
+	case types.OpQuery:
 		where, _ := d.parseWhere(where)
 		if where != "" {
 			where = " WHERE " + where
 		}
-		return fmt.Sprintf("SELECT * FROM %%s%s", where), nil
+		sqlStr = fmt.Sprintf("SELECT * FROM %%s%s", where)
 
-	case "Update":
+	case types.OpUpdate:
 		if set == nil {
 			return "", fmt.Errorf("Update data cannot be empty")
 		}
@@ -84,30 +87,43 @@ func (d *SQLiteDriver) ParseCond(op string, where *types.ConditionExpr, set *typ
 		if where != "" {
 			where = " WHERE " + where
 		}
-		return fmt.Sprintf("UPDATE %%s SET %s%s", setClause, where), nil
+		sqlStr = fmt.Sprintf("UPDATE %%s SET %s%s", setClause, where)
 
-	case "Delete":
+	case types.OpDelete:
 		where, _ := d.parseWhere(where)
 		if where != "" {
 			where = " WHERE " + where
 		}
-		return fmt.Sprintf("DELETE FROM %%s%s", where), nil
+		sqlStr = fmt.Sprintf("DELETE FROM %%s%s", where)
 
-	case "Exec":
+	case types.OpExec:
 		if where == nil || where.Op != types.OpRaw {
 
 			log.Printf("where: %+v", where)
 			return "", fmt.Errorf("Exec only supports OpRaw ConditionExpr")
 		}
-		sqlStr, ok := where.Value.(string)
+		execStr, ok := where.Value.(string)
 		if !ok {
 			return "", fmt.Errorf("Exec OpRaw ConditionExpr.Value must be string")
 		}
-		return sqlStr, nil
+		sqlStr = execStr
 
 	default:
 		return "", fmt.Errorf("unsupported op: %s", op)
 	}
+	return sqlStr, nil
+}
+func (d *SQLiteDriver) ParseAndCacheCond(op types.OpType, where *types.ConditionExpr, set *types.ConditionExpr) (string, error) {
+	cacheKeyExpr := where
+	if sqlStr, ok := dbtools.GetCondCache(SQLiteDriverName, op, cacheKeyExpr); ok {
+		return sqlStr, nil
+	}
+	cond, err := d.ParseNewCond(op, where, set)
+	if err != nil {
+		return "", err
+	}
+	dbtools.SetCondCache(SQLiteDriverName, op, cacheKeyExpr, cond)
+	return cond, nil
 }
 
 // parseWhere 仅生成 WHERE 子句和参数（内部辅助）
@@ -177,7 +193,7 @@ func (db *SQLiteDB) Begin() (types.Tx, error) {
 }
 
 func (db *SQLiteDB) Insert(table string, data *types.ConditionExpr) (int64, error) {
-	sqlTmpl, err := db.driver.ParseCond("Insert", data, nil)
+	sqlTmpl, err := db.driver.ParseAndCacheCond(types.OpInsert, data, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -195,7 +211,7 @@ func (db *SQLiteDB) Insert(table string, data *types.ConditionExpr) (int64, erro
 }
 
 func (db *SQLiteDB) Query(table string, cond *types.ConditionExpr) (*types.Rows, error) {
-	sqlTmpl, err := db.driver.ParseCond("Query", cond, nil)
+	sqlTmpl, err := db.driver.ParseAndCacheCond(types.OpQuery, cond, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +246,7 @@ func (db *SQLiteDB) Query(table string, cond *types.ConditionExpr) (*types.Rows,
 
 func (db *SQLiteDB) Update(table string, where, set *types.ConditionExpr) (int64, error) {
 	// 生成 SQL 模板
-	sqlTmpl, err := db.driver.ParseCond("Update", where, set)
+	sqlTmpl, err := db.driver.ParseAndCacheCond(types.OpUpdate, where, set)
 	if err != nil {
 		return 0, err
 	}
@@ -260,7 +276,7 @@ func (db *SQLiteDB) Update(table string, where, set *types.ConditionExpr) (int64
 }
 
 func (db *SQLiteDB) Delete(table string, cond *types.ConditionExpr) (int64, error) {
-	sqlTmpl, err := db.driver.ParseCond("Delete", cond, nil)
+	sqlTmpl, err := db.driver.ParseAndCacheCond(types.OpDelete, cond, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -274,7 +290,7 @@ func (db *SQLiteDB) Delete(table string, cond *types.ConditionExpr) (int64, erro
 }
 
 func (db *SQLiteDB) Exec(cond *types.ConditionExpr) (int64, error) {
-	sqlStr, err := db.driver.ParseCond("Exec", cond, nil)
+	sqlStr, err := db.driver.ParseAndCacheCond(types.OpExec, cond, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -293,7 +309,7 @@ type SQLiteTx struct {
 }
 
 func (tx *SQLiteTx) Query(table string, cond *types.ConditionExpr) (*types.Rows, error) {
-	sqlTmpl, err := tx.driver.ParseCond("Query", cond, nil)
+	sqlTmpl, err := tx.driver.ParseAndCacheCond(types.OpQuery, cond, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -325,7 +341,7 @@ func (tx *SQLiteTx) Query(table string, cond *types.ConditionExpr) (*types.Rows,
 }
 
 func (tx *SQLiteTx) Insert(table string, data *types.ConditionExpr) (int64, error) {
-	sqlTmpl, err := tx.driver.ParseCond("Insert", data, nil)
+	sqlTmpl, err := tx.driver.ParseAndCacheCond(types.OpInsert, data, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -343,7 +359,7 @@ func (tx *SQLiteTx) Insert(table string, data *types.ConditionExpr) (int64, erro
 }
 func (tx *SQLiteTx) Update(table string, where, set *types.ConditionExpr) (int64, error) {
 	// 生成 SQL 模板
-	sqlTmpl, err := tx.driver.ParseCond("Update", where, set)
+	sqlTmpl, err := tx.driver.ParseAndCacheCond(types.OpUpdate, where, set)
 	if err != nil {
 		return 0, err
 	}
@@ -372,7 +388,7 @@ func (tx *SQLiteTx) Update(table string, where, set *types.ConditionExpr) (int64
 	return res.RowsAffected()
 }
 func (tx *SQLiteTx) Delete(table string, cond *types.ConditionExpr) (int64, error) {
-	sqlTmpl, err := tx.driver.ParseCond("Delete", cond, nil)
+	sqlTmpl, err := tx.driver.ParseAndCacheCond(types.OpDelete, cond, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -385,7 +401,7 @@ func (tx *SQLiteTx) Delete(table string, cond *types.ConditionExpr) (int64, erro
 	return res.RowsAffected()
 }
 func (tx *SQLiteTx) Exec(cond *types.ConditionExpr) (int64, error) {
-	sqlStr, err := tx.driver.ParseCond("Exec", cond, nil)
+	sqlStr, err := tx.driver.ParseAndCacheCond(types.OpExec, cond, nil)
 	if err != nil {
 		return 0, err
 	}

@@ -52,6 +52,6 @@ func Open(cfg types.DBConfig) (types.Conn, error) {
 	return drv.Open(cfg)
 }
 
-func Condition() *types.CondBuilder {
+func Cond() *types.CondBuilder {
 	return types.NewCondition()
 }

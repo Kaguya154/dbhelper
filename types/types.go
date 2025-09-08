@@ -29,3 +29,17 @@ type Rows struct {
 func NewRows(data []map[string]interface{}) *Rows {
 	return &Rows{data: data, pos: -1}
 }
+
+type OpType string
+
+const (
+	OpInsert OpType = "Insert"
+	OpQuery  OpType = "Query"
+	OpUpdate OpType = "Update"
+	OpDelete OpType = "Delete"
+	OpExec   OpType = "Exec"
+)
+
+func (op OpType) String() string {
+	return string(op)
+}
