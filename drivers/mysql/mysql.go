@@ -2,28 +2,30 @@ package mysql
 
 import (
 	"database/sql"
-	"dbhelper/dbtools"
+	"dbhelper/parser"
 	"dbhelper/types"
 	"fmt"
-	"strings"
 
 	_ "github.com/go-sql-driver/mysql"
 )
 
 // MySQLDriver 实现 dbhelper.Driver
-type MySQLDriver struct{}
+
+func GetDriver() *MySQLDriver {
+	d := &MySQLDriver{Parser: &parser.SQLParser{DriverID: DriverID}}
+	d.Parser.Driver = d
+	return d
+}
+
+type MySQLDriver struct {
+	Parser *parser.SQLParser
+}
 
 const DriverName = "mysql"
 const DriverID uint8 = 1
 
-var opStrMap = map[types.ConditionOp]string{
-	types.OpEq:   "=",
-	types.OpNe:   "<>",
-	types.OpGt:   ">",
-	types.OpGte:  ">=",
-	types.OpLt:   "<",
-	types.OpLte:  "<=",
-	types.OpLike: "LIKE",
+func (d *MySQLDriver) DSLParser() types.Parser {
+	return d.Parser
 }
 
 func (d *MySQLDriver) Open(cfg types.DBConfig) (types.Conn, error) {
@@ -48,168 +50,6 @@ func (d *MySQLDriver) Placeholder(n int) string {
 	return "?"
 }
 
-func (d *MySQLDriver) ParseNewCond(op types.OpType, where *types.ConditionExpr, set *types.ConditionExpr) (string, []interface{}, error) {
-	var sb strings.Builder
-	var args []interface{}
-	switch op {
-	case types.OpInsert:
-		if where == nil || where.Op != types.OpAnd || len(where.Exprs) == 0 {
-			return "", nil, fmt.Errorf("Insert data must be AND expr with fields")
-		}
-		sb.WriteString("INSERT INTO %s (")
-		for i, expr := range where.Exprs {
-			if expr.Op != types.OpEq {
-				return "", nil, fmt.Errorf("Insert only supports EQ expr")
-			}
-			if i > 0 {
-				sb.WriteByte(',')
-			}
-			sb.WriteString(d.Quote(expr.Field))
-		}
-		sb.WriteString(") VALUES (")
-		for i := range where.Exprs {
-			if i > 0 {
-				sb.WriteByte(',')
-			}
-			sb.WriteByte('?')
-		}
-		sb.WriteByte(')')
-		for _, expr := range where.Exprs {
-			args = append(args, expr.Value)
-		}
-
-	case types.OpQuery:
-		sb.WriteString("SELECT * FROM %s")
-		if where != nil {
-			sb.WriteString(" WHERE ")
-			d.buildWhere(&sb, where, &args)
-		}
-
-	case types.OpUpdate:
-		if set == nil {
-			return "", nil, fmt.Errorf("Update data cannot be empty")
-		}
-		sb.WriteString("UPDATE %s SET ")
-		first := true
-		if set.Op == types.OpAnd && len(set.Exprs) > 0 {
-			for _, expr := range set.Exprs {
-				if !first {
-					sb.WriteByte(',')
-				}
-				sb.WriteString(d.Quote(expr.Field))
-				sb.WriteString("=?")
-				first = false
-			}
-		} else if set.Op == types.OpEq && set.Field != "" {
-			sb.WriteString(d.Quote(set.Field))
-			sb.WriteString("=?")
-		} else {
-			return "", nil, fmt.Errorf("Invalid update data")
-		}
-		if where != nil {
-			sb.WriteString(" WHERE ")
-			var whereArgs []interface{}
-			var nilsb strings.Builder
-			d.buildWhere(&sb, where, &whereArgs)
-			d.buildWhere(&nilsb, set, &args)
-			args = append(args, whereArgs...)
-		}
-
-	case types.OpDelete:
-		sb.WriteString("DELETE FROM %s")
-		if where != nil {
-			sb.WriteString(" WHERE ")
-			d.buildWhere(&sb, where, &args)
-		}
-
-	case types.OpExec:
-		if where == nil || where.Op != types.OpRaw {
-			return "", nil, fmt.Errorf("Exec only supports OpRaw ConditionExpr")
-		}
-		execStr, ok := where.Value.(string)
-		if !ok {
-			return "", nil, fmt.Errorf("Exec OpRaw ConditionExpr.Value must be string")
-		}
-		sb.WriteString(execStr)
-
-	default:
-		return "", nil, fmt.Errorf("unsupported op: %s", op)
-	}
-
-	return sb.String(), args, nil
-}
-
-func (d *MySQLDriver) ParseAndCacheCond(op types.OpType, where *types.ConditionExpr, set *types.ConditionExpr) (string, []interface{}, error) {
-	if sqlStr, args, ok := dbtools.GetCondCache(DriverID, op, where); ok {
-		return sqlStr, args, nil
-	}
-
-	sqlStr, args, err := d.ParseNewCond(op, where, set) // 让 ParseNewCond 负责收集 args
-	if err != nil {
-		return "", nil, err
-	}
-
-	dbtools.SetCondCache(DriverID, op, where, sqlStr, args)
-	return sqlStr, args, nil
-}
-
-// buildWhere 递归构建 WHERE 子句
-func (d *MySQLDriver) buildWhere(sb *strings.Builder, cond *types.ConditionExpr, args *[]interface{}) {
-	if cond == nil {
-		return
-	}
-	switch cond.Op {
-	case types.OpAnd, types.OpOr:
-		sep := " AND "
-		if cond.Op == types.OpOr {
-			sep = " OR "
-		}
-		first := true
-		for _, expr := range cond.Exprs {
-			if expr == nil {
-				continue
-			}
-			if !first {
-				sb.WriteString(sep)
-			}
-			sb.WriteByte('(')
-			d.buildWhere(sb, expr, args)
-			sb.WriteByte(')')
-			first = false
-		}
-	case types.OpEq, types.OpNe, types.OpGt, types.OpGte, types.OpLt, types.OpLte, types.OpLike:
-		if opStr, ok := opStrMap[cond.Op]; ok {
-			sb.WriteString(d.Quote(cond.Field))
-			sb.WriteByte(' ')
-			sb.WriteString(opStr)
-			sb.WriteString(" ?")
-			*args = append(*args, cond.Value)
-		}
-	case types.OpIn:
-		if len(cond.Values) == 0 {
-			sb.WriteString("1=0")
-			return
-		}
-		sb.WriteString(d.Quote(cond.Field))
-		sb.WriteString(" IN (")
-		for i := range cond.Values {
-			if i > 0 {
-				sb.WriteByte(',')
-			}
-			sb.WriteByte('?')
-		}
-		sb.WriteByte(')')
-		*args = append(*args, cond.Values...)
-	case types.OpRaw:
-		if s, ok := cond.Value.(string); ok {
-			sb.WriteString(s)
-		}
-		if cond.Values != nil {
-			*args = append(*args, cond.Values...)
-		}
-	}
-}
-
 // MySQLDB 实现 dbhelper.Conn
 type MySQLDB struct {
 	conn   *sql.DB
@@ -225,7 +65,7 @@ func (db *MySQLDB) Begin() (types.Tx, error) {
 }
 
 func (db *MySQLDB) Insert(table string, data *types.ConditionExpr) (int64, error) {
-	sqlTmpl, args, err := db.driver.ParseAndCacheCond(types.OpInsert, data, nil)
+	sqlTmpl, args, err := db.driver.Parser.ParseAndCacheCond(types.OpInsert, data, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -238,7 +78,7 @@ func (db *MySQLDB) Insert(table string, data *types.ConditionExpr) (int64, error
 }
 
 func (db *MySQLDB) Query(table string, cond *types.ConditionExpr) (*types.Rows, error) {
-	sqlTmpl, args, err := db.driver.ParseAndCacheCond(types.OpQuery, cond, nil)
+	sqlTmpl, args, err := db.driver.Parser.ParseAndCacheCond(types.OpQuery, cond, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -272,7 +112,7 @@ func (db *MySQLDB) Query(table string, cond *types.ConditionExpr) (*types.Rows, 
 }
 
 func (db *MySQLDB) Update(table string, where, set *types.ConditionExpr) (int64, error) {
-	sqlTmpl, args, err := db.driver.ParseAndCacheCond(types.OpUpdate, where, set)
+	sqlTmpl, args, err := db.driver.Parser.ParseAndCacheCond(types.OpUpdate, where, set)
 	if err != nil {
 		return 0, err
 	}
@@ -286,7 +126,7 @@ func (db *MySQLDB) Update(table string, where, set *types.ConditionExpr) (int64,
 }
 
 func (db *MySQLDB) Delete(table string, cond *types.ConditionExpr) (int64, error) {
-	sqlTmpl, args, err := db.driver.ParseAndCacheCond(types.OpDelete, cond, nil)
+	sqlTmpl, args, err := db.driver.Parser.ParseAndCacheCond(types.OpDelete, cond, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -300,7 +140,7 @@ func (db *MySQLDB) Delete(table string, cond *types.ConditionExpr) (int64, error
 }
 
 func (db *MySQLDB) Exec(cond *types.ConditionExpr) (int64, error) {
-	sqlStr, args, err := db.driver.ParseAndCacheCond(types.OpExec, cond, nil)
+	sqlStr, args, err := db.driver.Parser.ParseAndCacheCond(types.OpExec, cond, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -318,7 +158,7 @@ type MySQLTx struct {
 }
 
 func (tx *MySQLTx) Query(table string, cond *types.ConditionExpr) (*types.Rows, error) {
-	sqlTmpl, args, err := tx.driver.ParseAndCacheCond(types.OpQuery, cond, nil)
+	sqlTmpl, args, err := tx.driver.Parser.ParseAndCacheCond(types.OpQuery, cond, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -351,7 +191,7 @@ func (tx *MySQLTx) Query(table string, cond *types.ConditionExpr) (*types.Rows, 
 }
 
 func (tx *MySQLTx) Insert(table string, data *types.ConditionExpr) (int64, error) {
-	sqlTmpl, args, err := tx.driver.ParseAndCacheCond(types.OpInsert, data, nil)
+	sqlTmpl, args, err := tx.driver.Parser.ParseAndCacheCond(types.OpInsert, data, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -365,7 +205,7 @@ func (tx *MySQLTx) Insert(table string, data *types.ConditionExpr) (int64, error
 }
 
 func (tx *MySQLTx) Update(table string, where, set *types.ConditionExpr) (int64, error) {
-	sqlTmpl, args, err := tx.driver.ParseAndCacheCond(types.OpUpdate, where, set)
+	sqlTmpl, args, err := tx.driver.Parser.ParseAndCacheCond(types.OpUpdate, where, set)
 	if err != nil {
 		return 0, err
 	}
@@ -379,7 +219,7 @@ func (tx *MySQLTx) Update(table string, where, set *types.ConditionExpr) (int64,
 }
 
 func (tx *MySQLTx) Delete(table string, cond *types.ConditionExpr) (int64, error) {
-	sqlTmpl, args, err := tx.driver.ParseAndCacheCond(types.OpDelete, cond, nil)
+	sqlTmpl, args, err := tx.driver.Parser.ParseAndCacheCond(types.OpDelete, cond, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -392,7 +232,7 @@ func (tx *MySQLTx) Delete(table string, cond *types.ConditionExpr) (int64, error
 	return res.RowsAffected()
 }
 func (tx *MySQLTx) Exec(cond *types.ConditionExpr) (int64, error) {
-	sqlStr, args, err := tx.driver.ParseAndCacheCond(types.OpExec, cond, nil)
+	sqlStr, args, err := tx.driver.Parser.ParseAndCacheCond(types.OpExec, cond, nil)
 	if err != nil {
 		return 0, err
 	}
