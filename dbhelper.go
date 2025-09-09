@@ -31,8 +31,8 @@ func RegisterDriver(name string, drv types.Driver) error {
 	return nil
 }
 
-// getDriver 获取注册的驱动
-func getDriver(name string) (types.Driver, error) {
+// GetDriver 获取注册的驱动
+func GetDriver(name string) (types.Driver, error) {
 	registeredDriversMu.RLock()
 	defer registeredDriversMu.RUnlock()
 
@@ -45,7 +45,7 @@ func getDriver(name string) (types.Driver, error) {
 
 // Open 通过注册的驱动创建数据库连接
 func Open(cfg types.DBConfig) (types.Conn, error) {
-	drv, err := getDriver(cfg.Driver)
+	drv, err := GetDriver(cfg.Driver)
 	if err != nil {
 		return nil, err
 	}

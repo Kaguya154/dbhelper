@@ -1,6 +1,7 @@
-package dbhelper
+package sqlite_test
 
 import (
+	"dbhelper"
 	"dbhelper/drivers/sqlite"
 	"dbhelper/types"
 	"testing"
@@ -8,22 +9,22 @@ import (
 
 func init() {
 	// 注册驱动
-	err := RegisterDriver(sqlite.DriverName, &sqlite.SQLiteDriver{})
+	err := dbhelper.RegisterDriver(sqlite.DriverName, sqlite.GetDriver())
 	if err != nil {
 		return
 	}
 }
 
 func TestCondBuilder(t *testing.T) {
-	driver, err := getDriver(sqlite.DriverName)
+	driver, err := dbhelper.GetDriver(sqlite.DriverName)
 	if err != nil {
 		t.Fatalf("获取驱动失败: %v", err)
 	}
 	// 测试Query条件并Prase打印
-	queryCond := Cond().Eq("name", "Tom").Gt("age", 18).Like("email", "%@example.com").And(
-		Cond().Eq("status", "active").Or().Eq("status", "pending"),
+	queryCond := dbhelper.Cond().Eq("name", "Tom").Gt("age", 18).Like("email", "%@example.com").And(
+		dbhelper.Cond().Eq("status", "active").Or().Eq("status", "pending"),
 	).Build()
-	querySQL, queryArgs, err := driver.ParseAndCacheCond(types.OpQuery, queryCond, nil)
+	querySQL, queryArgs, err := driver.Parser().ParseAndCache(types.OpQuery, queryCond, nil)
 	if err != nil {
 		t.Fatalf("解析条件失败: %v", err)
 	}
@@ -31,8 +32,8 @@ func TestCondBuilder(t *testing.T) {
 	t.Logf("生成的查询Args: %v", queryArgs)
 
 	// 测试插入条件
-	insertCond := Cond().Eq("name", "Tom").Eq("age", 20).Build()
-	insertSQL, insertArgs, err := driver.ParseAndCacheCond(types.OpInsert, insertCond, nil)
+	insertCond := dbhelper.Cond().Eq("name", "Tom").Eq("age", 20).Build()
+	insertSQL, insertArgs, err := driver.Parser().ParseAndCache(types.OpInsert, insertCond, nil)
 	if err != nil {
 		t.Fatalf("解析插入条件失败: %v", err)
 	}
@@ -40,11 +41,11 @@ func TestCondBuilder(t *testing.T) {
 	t.Logf("生成的插入Args: %v", insertArgs)
 	// 测试更新条件
 	// SET age=21
-	updateData := Cond().Eq("age", 21).Build()
+	updateData := dbhelper.Cond().Eq("age", 21).Build()
 	// WHERE name='Tom'
-	updateCond := Cond().Eq("name", "Tom").Build()
+	updateCond := dbhelper.Cond().Eq("name", "Tom").Build()
 
-	updateSQL, updateArgs, err := driver.ParseAndCacheCond(types.OpUpdate, updateCond, updateData)
+	updateSQL, updateArgs, err := driver.Parser().ParseAndCache(types.OpUpdate, updateCond, updateData)
 	if err != nil {
 		t.Fatalf("解析更新条件失败: %v", err)
 	}
@@ -52,16 +53,16 @@ func TestCondBuilder(t *testing.T) {
 	t.Logf("生成的更新Args: %v", updateArgs)
 
 	// 测试删除条件
-	deleteCond := Cond().Eq("name", "Tom").Build()
-	deleteSQL, deleteArgs, err := driver.ParseAndCacheCond(types.OpDelete, deleteCond, nil)
+	deleteCond := dbhelper.Cond().Eq("name", "Tom").Build()
+	deleteSQL, deleteArgs, err := driver.Parser().ParseAndCache(types.OpDelete, deleteCond, nil)
 	if err != nil {
 		t.Fatalf("解析删除条件失败: %v", err)
 	}
 	t.Logf("生成的删除SQL: %s", deleteSQL)
 	t.Logf("生成的删除Args: %v", deleteArgs)
 	// 测试Exec条件
-	execCond := Cond().Raw("CREATE TABLE test (id INTEGER PRIMARY KEY, name TEXT)").Build()
-	execSQL, _, err := driver.ParseAndCacheCond(types.OpExec, execCond, nil)
+	execCond := dbhelper.Cond().Raw("CREATE TABLE test (id INTEGER PRIMARY KEY, name TEXT)").Build()
+	execSQL, _, err := driver.Parser().ParseAndCache(types.OpExec, execCond, nil)
 	if err != nil {
 		t.Fatalf("解析Exec条件失败: %v", err)
 	}
@@ -70,35 +71,35 @@ func TestCondBuilder(t *testing.T) {
 }
 
 func TestSQLiteDriver_CRUD(t *testing.T) {
-	db, err := Open(types.DBConfig{
+	db, err := dbhelper.Open(types.DBConfig{
 		Driver: sqlite.DriverName,
 		DSN:    ":memory:",
 	})
 	if err != nil {
 		t.Fatalf("打开数据库失败: %v", err)
 	}
-	createTable := Cond().Raw("CREATE TABLE user (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, age INT)").Build()
+	createTable := dbhelper.Cond().Raw("CREATE TABLE user (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, age INT)").Build()
 	// 使用 Exec 方法建表
 	_, err = db.Exec(createTable)
 	if err != nil {
 		t.Fatalf("建表失败: %v", err)
 	}
 	// 插入
-	data := Cond().Eq("name", "Tom").Eq("age", 20).Build()
+	data := dbhelper.Cond().Eq("name", "Tom").Eq("age", 20).Build()
 	id, err := db.Insert("user", data)
 	if err != nil || id == 0 {
 		t.Fatalf("插入失败: %v, id=%d", err, id)
 	}
 	t.Logf("插入成功, id=%d", id)
 	// 查询
-	cond := Cond().Eq("name", "Tom").Build()
+	cond := dbhelper.Cond().Eq("name", "Tom").Build()
 	rows, err := db.Query("user", cond)
 	if err != nil || rows.Count() == 0 {
 		t.Fatalf("查询失败: %v, rows=%v", err, rows)
 	}
 	t.Logf("查询成功, rows=%v", rows.All())
 	// 更新
-	upd := Cond().Eq("age", 21).Build()
+	upd := dbhelper.Cond().Eq("age", 21).Build()
 	n, err := db.Update("user", cond, upd)
 	if err != nil || n == 0 {
 		t.Fatalf("更新失败: %v, n=%d", err, n)
@@ -114,14 +115,14 @@ func TestSQLiteDriver_CRUD(t *testing.T) {
 
 // Tx测试
 func TestSQLiteDriver_Tx(t *testing.T) {
-	db, err := Open(types.DBConfig{
+	db, err := dbhelper.Open(types.DBConfig{
 		Driver: sqlite.DriverName,
 		DSN:    ":memory:",
 	})
 	if err != nil {
 		t.Fatalf("打开数据库失败: %v", err)
 	}
-	createTable := Cond().Raw("CREATE TABLE user (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, age INT)").Build()
+	createTable := dbhelper.Cond().Raw("CREATE TABLE user (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, age INT)").Build()
 	// 使用 Exec 方法建表
 	_, err = db.Exec(createTable)
 	if err != nil {
@@ -133,7 +134,7 @@ func TestSQLiteDriver_Tx(t *testing.T) {
 		t.Fatalf("开始事务失败: %v", err)
 	}
 	// 插入
-	data := Cond().Eq("name", "Alice").Eq("age", 25).Build()
+	data := dbhelper.Cond().Eq("name", "Alice").Eq("age", 25).Build()
 	id, err := tx.Insert("user", data)
 	if err != nil || id == 0 {
 		tx.Rollback()
@@ -141,7 +142,7 @@ func TestSQLiteDriver_Tx(t *testing.T) {
 	}
 	t.Logf("插入成功, id=%d", id)
 	// 查询
-	cond := Cond().Eq("name", "Alice").Build()
+	cond := dbhelper.Cond().Eq("name", "Alice").Build()
 	rows, err := tx.Query("user", cond)
 	if err != nil || rows.Count() == 0 {
 		tx.Rollback()

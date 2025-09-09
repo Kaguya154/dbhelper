@@ -1,6 +1,7 @@
-package dbhelper
+package dbtools_test
 
 import (
+	"dbhelper"
 	"dbhelper/dbtools"
 	"dbhelper/drivers/sqlite"
 	"dbhelper/types"
@@ -9,7 +10,7 @@ import (
 
 func init() {
 	// 注册驱动
-	err := RegisterDriver(sqlite.DriverName, &sqlite.SQLiteDriver{})
+	err := dbhelper.RegisterDriver(sqlite.DriverName, sqlite.GetDriver())
 	if err != nil {
 		return
 	}
@@ -17,16 +18,16 @@ func init() {
 
 func TestCondCache(t *testing.T) {
 
-	driver, err := getDriver(sqlite.DriverName)
+	driver, err := dbhelper.GetDriver(sqlite.DriverName)
 	if err != nil {
 		t.Fatalf("获取驱动失败: %v", err)
 	}
 	// 测试Query条件并Prase打印
-	queryCond := Cond().Eq("name", "Tom").Gt("age", 18).
+	queryCond := dbhelper.Cond().Eq("name", "Tom").Gt("age", 18).
 		Like("email", "%@example.com").And(
-		Cond().Eq("status", "active").Or().Eq("status", "pending"),
+		dbhelper.Cond().Eq("status", "active").Or().Eq("status", "pending"),
 	).Build()
-	querySQL, quaryArgs, err := driver.ParseAndCacheCond(types.OpQuery, queryCond, nil)
+	querySQL, quaryArgs, err := driver.Parser().ParseAndCache(types.OpQuery, queryCond, nil)
 	if err != nil {
 		t.Fatalf("解析条件失败: %v", err)
 	}
@@ -41,9 +42,9 @@ func TestCondCache(t *testing.T) {
 	t.Logf("查询条件缓存Args: %v", argCache)
 
 	// 测试插入条件
-	insertCond := Cond().Eq("name", "Tom").Eq("age", 20).
+	insertCond := dbhelper.Cond().Eq("name", "Tom").Eq("age", 20).
 		Build()
-	insertSQL, insertArgs, err := driver.ParseAndCacheCond(types.OpInsert, insertCond, nil)
+	insertSQL, insertArgs, err := driver.Parser().ParseAndCache(types.OpInsert, insertCond, nil)
 	if err != nil {
 		t.Fatalf("解析插入条件失败: %v", err)
 	}
@@ -70,7 +71,7 @@ func mockCondition() *types.ConditionExpr {
 
 func BenchmarkParseCond(b *testing.B) {
 
-	driver, err := getDriver(sqlite.DriverName)
+	driver, err := dbhelper.GetDriver(sqlite.DriverName)
 	if err != nil {
 		b.Fatalf("获取驱动失败: %v", err)
 	}
@@ -86,7 +87,7 @@ func BenchmarkParseCond(b *testing.B) {
 	b.Run("ParseAndCacheCond", func(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_, _, err := driver.ParseAndCacheCond(types.OpUpdate, where, set)
+			_, _, err := driver.Parser().ParseAndCache(types.OpUpdate, where, set)
 			if err != nil {
 				b.Fatalf("unexpected error: %v", err)
 			}
@@ -96,7 +97,7 @@ func BenchmarkParseCond(b *testing.B) {
 	b.Run("ParseNewCond", func(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_, _, err := driver.ParseNewCond(types.OpUpdate, where, set)
+			_, _, err := driver.Parser().Parse(types.OpUpdate, where, set)
 			if err != nil {
 				b.Fatalf("unexpected error: %v", err)
 			}
