@@ -1,12 +1,13 @@
 package parser
 
 import (
+	"dbhelper/dbtools"
 	"dbhelper/types"
 	"encoding/json"
 	"fmt"
+	"sync"
 )
 
-// JsonParser 支持非 SQL 数据库，生成 JSON 风格的操作结构
 type JsonParser struct {
 	DriverName string
 	DriverID   uint8
@@ -20,17 +21,43 @@ var opNameMap = map[types.OpType]string{
 	types.OpExec:   "exec",
 }
 
-func (p *JsonParser) Parse(op types.OpType, where *types.ConditionExpr, set *types.ConditionExpr) (string, []interface{}, error) {
-	result := map[string]interface{}{
-		"op": opNameMap[op],
+// sync.Pool 复用 map[string]interface{} 和 []interface{}
+var mapPool = sync.Pool{
+	New: func() interface{} { return make(map[string]interface{}, 8) },
+}
+var slicePool = sync.Pool{
+	New: func() interface{} { return make([]interface{}, 0, 8) },
+}
+
+func getMap() map[string]interface{} {
+	return mapPool.Get().(map[string]interface{})
+}
+func putMap(m map[string]interface{}) {
+	for k := range m {
+		delete(m, k)
 	}
+	mapPool.Put(m)
+}
+func getSlice() []interface{} {
+	return slicePool.Get().([]interface{})
+}
+func putSlice(s []interface{}) {
+	s = s[:0]
+	slicePool.Put(s)
+}
+
+func (p *JsonParser) Parse(op types.OpType, where *types.ConditionExpr, set *types.ConditionExpr) (string, []interface{}, error) {
+	result := getMap()
+	defer putMap(result)
+	result["op"] = opNameMap[op]
 
 	switch op {
 	case types.OpInsert:
 		if where == nil || where.Op != types.OpAnd || len(where.Exprs) == 0 {
 			return "", nil, fmt.Errorf("Insert data must be AND expr with fields")
 		}
-		data := make(map[string]interface{})
+		data := getMap()
+		defer putMap(data)
 		for _, expr := range where.Exprs {
 			if expr.Op != types.OpEq {
 				return "", nil, fmt.Errorf("Insert only supports EQ expr")
@@ -41,13 +68,14 @@ func (p *JsonParser) Parse(op types.OpType, where *types.ConditionExpr, set *typ
 
 	case types.OpQuery, types.OpDelete, types.OpUpdate:
 		if where != nil {
-			result["filter"] = buildJsonFilter(where)
+			filter := buildJsonFilterOpt(where)
+			result["filter"] = filter
 		}
 		if op == types.OpUpdate {
 			if set == nil {
 				return "", nil, fmt.Errorf("Update data cannot be empty")
 			}
-			result["update"] = buildJsonUpdate(set)
+			result["update"] = buildJsonUpdateOpt(set)
 		}
 
 	case types.OpExec:
@@ -73,42 +101,77 @@ func (p *JsonParser) Parse(op types.OpType, where *types.ConditionExpr, set *typ
 }
 
 func (p *JsonParser) ParseAndCache(op types.OpType, where *types.ConditionExpr, set *types.ConditionExpr) (string, []interface{}, error) {
-	// NoSQL 通常不需要 args 参数，缓存可以仅基于操作 + 条件
-	return p.Parse(op, where, set)
+	if sqlStr, args, ok := dbtools.GetCondCache(p.DriverID, op, where); ok {
+		return sqlStr, args, nil
+	}
+	sqlStr, args, err := p.Parse(op, where, set)
+	if err != nil {
+		return "", nil, err
+	}
+	dbtools.SetCondCache(p.DriverID, op, where, sqlStr, args)
+	return sqlStr, args, nil
 }
 
-// buildJsonFilter 递归构建查询条件
-func buildJsonFilter(cond *types.ConditionExpr) map[string]interface{} {
+// 优化递归构建，尽量复用 slice/map
+func buildJsonFilterOpt(cond *types.ConditionExpr) interface{} {
 	if cond == nil {
 		return nil
 	}
 	switch cond.Op {
 	case types.OpAnd, types.OpOr:
-		arr := make([]interface{}, 0, len(cond.Exprs))
+		arr := getSlice()
+		defer putSlice(arr)
 		for _, expr := range cond.Exprs {
-			arr = append(arr, buildJsonFilter(expr))
+			arr = append(arr, buildJsonFilterOpt(expr))
 		}
 		opName := "$and"
 		if cond.Op == types.OpOr {
 			opName = "$or"
 		}
-		return map[string]interface{}{opName: arr}
+		m := getMap()
+		defer putMap(m)
+		m[opName] = append([]interface{}(nil), arr...)
+		return m
 	case types.OpEq:
-		return map[string]interface{}{cond.Field: cond.Value}
+		m := getMap()
+		defer putMap(m)
+		m[cond.Field] = cond.Value
+		return m
 	case types.OpNe:
-		return map[string]interface{}{cond.Field: map[string]interface{}{"$ne": cond.Value}}
+		m := getMap()
+		defer putMap(m)
+		m[cond.Field] = map[string]interface{}{"$ne": cond.Value}
+		return m
 	case types.OpGt:
-		return map[string]interface{}{cond.Field: map[string]interface{}{"$gt": cond.Value}}
+		m := getMap()
+		defer putMap(m)
+		m[cond.Field] = map[string]interface{}{"$gt": cond.Value}
+		return m
 	case types.OpGte:
-		return map[string]interface{}{cond.Field: map[string]interface{}{"$gte": cond.Value}}
+		m := getMap()
+		defer putMap(m)
+		m[cond.Field] = map[string]interface{}{"$gte": cond.Value}
+		return m
 	case types.OpLt:
-		return map[string]interface{}{cond.Field: map[string]interface{}{"$lt": cond.Value}}
+		m := getMap()
+		defer putMap(m)
+		m[cond.Field] = map[string]interface{}{"$lt": cond.Value}
+		return m
 	case types.OpLte:
-		return map[string]interface{}{cond.Field: map[string]interface{}{"$lte": cond.Value}}
+		m := getMap()
+		defer putMap(m)
+		m[cond.Field] = map[string]interface{}{"$lte": cond.Value}
+		return m
 	case types.OpLike:
-		return map[string]interface{}{cond.Field: map[string]interface{}{"$like": cond.Value}}
+		m := getMap()
+		defer putMap(m)
+		m[cond.Field] = map[string]interface{}{"$like": cond.Value}
+		return m
 	case types.OpIn:
-		return map[string]interface{}{cond.Field: map[string]interface{}{"$in": cond.Values}}
+		m := getMap()
+		defer putMap(m)
+		m[cond.Field] = map[string]interface{}{"$in": cond.Values}
+		return m
 	case types.OpRaw:
 		if raw, ok := cond.Value.(map[string]interface{}); ok {
 			return raw
@@ -117,12 +180,13 @@ func buildJsonFilter(cond *types.ConditionExpr) map[string]interface{} {
 	return nil
 }
 
-func buildJsonUpdate(set *types.ConditionExpr) map[string]interface{} {
-	update := make(map[string]interface{})
+func buildJsonUpdateOpt(set *types.ConditionExpr) map[string]interface{} {
+	update := getMap()
+	defer putMap(update)
 	if set.Op == types.OpAnd && len(set.Exprs) > 0 {
 		for _, expr := range set.Exprs {
 			if expr.Op != types.OpEq {
-				continue // 简单实现只支持 EQ 更新
+				continue
 			}
 			update[expr.Field] = expr.Value
 		}
