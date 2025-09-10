@@ -16,7 +16,7 @@ func init() {
 	}
 }
 
-func TestCondCache(t *testing.T) {
+func TestSqliteCondCache(t *testing.T) {
 
 	driver, err := dbhelper.GetDriver(sqlite.DriverName)
 	if err != nil {
@@ -59,7 +59,7 @@ func TestCondCache(t *testing.T) {
 	t.Logf("插入条件缓存Args: %v", argCache)
 }
 
-func mockCondition() *types.ConditionExpr {
+func mockSqlCondition() *types.ConditionExpr {
 	return &types.ConditionExpr{
 		Op: types.OpAnd,
 		Exprs: []*types.ConditionExpr{
@@ -68,15 +68,38 @@ func mockCondition() *types.ConditionExpr {
 		},
 	}
 }
+func mockComplexCondition() *types.ConditionExpr {
+	return &types.ConditionExpr{
+		Op: types.OpOr,
+		Exprs: []*types.ConditionExpr{
+			{
+				Op: types.OpAnd,
+				Exprs: []*types.ConditionExpr{
+					{Op: types.OpEq, Field: "status", Value: "active"},
+					{Op: types.OpGt, Field: "age", Value: 18},
+				},
+			},
+			{
+				Op: types.OpAnd,
+				Exprs: []*types.ConditionExpr{
+					{Op: types.OpEq, Field: "status", Value: "pending"},
+					{Op: types.OpLt, Field: "age", Value: 18},
+				},
+			},
+			{Op: types.OpIn, Field: "role", Values: []interface{}{"admin", "user"}},
+			{Op: types.OpLike, Field: "email", Value: "%@example.com"},
+		},
+	}
+}
 
-func BenchmarkParseCond(b *testing.B) {
+func BenchmarkSqlParseCond(b *testing.B) {
 
 	driver, err := dbhelper.GetDriver(sqlite.DriverName)
 	if err != nil {
 		b.Fatalf("获取驱动失败: %v", err)
 	}
 
-	where := mockCondition()
+	where := mockSqlCondition()
 	set := &types.ConditionExpr{
 		Op: types.OpAnd,
 		Exprs: []*types.ConditionExpr{
@@ -84,7 +107,7 @@ func BenchmarkParseCond(b *testing.B) {
 		},
 	}
 
-	b.Run("ParseAndCacheCond", func(b *testing.B) {
+	b.Run("ParseAndCache", func(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			_, _, err := driver.Parser().ParseAndCache(types.OpUpdate, where, set)
@@ -94,7 +117,42 @@ func BenchmarkParseCond(b *testing.B) {
 		}
 	})
 
-	b.Run("ParseNewCond", func(b *testing.B) {
+	b.Run("Parse", func(b *testing.B) {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, _, err := driver.Parser().Parse(types.OpUpdate, where, set)
+			if err != nil {
+				b.Fatalf("unexpected error: %v", err)
+			}
+		}
+	})
+}
+
+func BenchmarkSqlParseComplexCond(b *testing.B) {
+	driver, err := dbhelper.GetDriver(sqlite.DriverName)
+	if err != nil {
+		b.Fatalf("获取驱动失败: %v", err)
+	}
+
+	where := mockComplexCondition()
+	set := &types.ConditionExpr{
+		Op: types.OpAnd,
+		Exprs: []*types.ConditionExpr{
+			{Op: types.OpEq, Field: "age", Value: 20},
+		},
+	}
+
+	b.Run("ParseAndCache", func(b *testing.B) {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, _, err := driver.Parser().ParseAndCache(types.OpUpdate, where, set)
+			if err != nil {
+				b.Fatalf("unexpected error: %v", err)
+			}
+		}
+	})
+
+	b.Run("Parse", func(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			_, _, err := driver.Parser().Parse(types.OpUpdate, where, set)
