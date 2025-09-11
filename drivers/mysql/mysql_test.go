@@ -70,7 +70,7 @@ func TestMySQLDriver_CRUD(t *testing.T) {
 	// 注意：请根据实际环境配置 DSN
 	db, err := dbhelper.Open(types.DBConfig{
 		Driver: mysql.DriverName,
-		DSN:    "root:password@tcp(127.0.0.1:3306)/test?charset=utf8mb4&parseTime=True&loc=Local",
+		DSN:    "test:test@tcp(127.0.0.1:3306)/test?charset=utf8mb4&parseTime=True&loc=Local",
 	})
 	if err != nil {
 		t.Skipf("跳过：未能连接到MySQL数据库: %v", err)
@@ -114,7 +114,7 @@ func TestMySQLDriver_CRUD(t *testing.T) {
 func TestMySQLDriver_Tx(t *testing.T) {
 	db, err := dbhelper.Open(types.DBConfig{
 		Driver: mysql.DriverName,
-		DSN:    "root:password@tcp(127.0.0.1:3306)/test?charset=utf8mb4&parseTime=True&loc=Local",
+		DSN:    "test:test@tcp(127.0.0.1:3306)/test?charset=utf8mb4&parseTime=True&loc=Local",
 	})
 	if err != nil {
 		t.Skipf("跳过：未能连接到MySQL数据库: %v", err)
