@@ -16,18 +16,24 @@ func init() {
 	}
 }
 
+func quoteSql(field string) string {
+	return "`" + field + "`"
+}
+
 func TestSqliteCondCache(t *testing.T) {
 
 	driver, err := dbhelper.GetDriver(sqlite.DriverName)
 	if err != nil {
 		t.Fatalf("获取驱动失败: %v", err)
 	}
+	p := driver.Parser()
+
 	// 测试Query条件并Prase打印
 	queryCond := dbhelper.Cond().Eq("name", "Tom").Gt("age", 18).
 		Like("email", "%@example.com").And(
 		dbhelper.Cond().Eq("status", "active").Or().Eq("status", "pending"),
 	).Build()
-	querySQL, quaryArgs, err := driver.Parser().ParseAndCache(types.OpQuery, queryCond, nil)
+	querySQL, quaryArgs, err := p.ParseAndCache(types.OpQuery, queryCond, nil)
 	if err != nil {
 		t.Fatalf("解析条件失败: %v", err)
 	}
@@ -44,7 +50,7 @@ func TestSqliteCondCache(t *testing.T) {
 	// 测试插入条件
 	insertCond := dbhelper.Cond().Eq("name", "Tom").Eq("age", 20).
 		Build()
-	insertSQL, insertArgs, err := driver.Parser().ParseAndCache(types.OpInsert, insertCond, nil)
+	insertSQL, insertArgs, err := p.ParseAndCache(types.OpInsert, insertCond, nil)
 	if err != nil {
 		t.Fatalf("解析插入条件失败: %v", err)
 	}
@@ -57,40 +63,36 @@ func TestSqliteCondCache(t *testing.T) {
 	}
 	t.Logf("插入条件缓存命中: %s", cache)
 	t.Logf("插入条件缓存Args: %v", argCache)
+
+	// 测试复杂条件
+	complexSQL, complexArgs, err := p.ParseAndCache(types.OpUpdate, complexCondition, set)
+	if err != nil {
+		t.Fatalf("解析复杂条件失败: %v", err)
+	}
+	t.Logf("生成的复杂SQL: %s", complexSQL)
+	t.Logf("生成的复杂Args: %v", complexArgs)
+	// 测试cache
+	cache, argCache, b = dbtools.GetCondCache(sqlite.DriverID, types.OpUpdate, complexCondition)
+	if !b {
+		t.Fatalf("复杂条件缓存未命中")
+	}
+	t.Logf("复杂条件缓存命中: %s", cache)
+	t.Logf("复杂条件缓存Args: %v", argCache)
+
 }
 
-func mockSqlCondition() *types.ConditionExpr {
-	return &types.ConditionExpr{
-		Op: types.OpAnd,
-		Exprs: []*types.ConditionExpr{
-			{Op: types.OpEq, Field: "id", Value: 123},
-			{Op: types.OpEq, Field: "name", Value: "test"},
-		},
-	}
-}
-func mockComplexCondition() *types.ConditionExpr {
-	return &types.ConditionExpr{
-		Op: types.OpOr,
-		Exprs: []*types.ConditionExpr{
-			{
-				Op: types.OpAnd,
-				Exprs: []*types.ConditionExpr{
-					{Op: types.OpEq, Field: "status", Value: "active"},
-					{Op: types.OpGt, Field: "age", Value: 18},
-				},
-			},
-			{
-				Op: types.OpAnd,
-				Exprs: []*types.ConditionExpr{
-					{Op: types.OpEq, Field: "status", Value: "pending"},
-					{Op: types.OpLt, Field: "age", Value: 18},
-				},
-			},
-			{Op: types.OpIn, Field: "role", Values: []interface{}{"admin", "user"}},
-			{Op: types.OpLike, Field: "email", Value: "%@example.com"},
-		},
-	}
-}
+var condition = dbhelper.Cond().Or(dbhelper.Cond().Eq("id", 123).Eq("name", "test")).Build()
+var complexCondition = dbhelper.Cond().Or(
+	dbhelper.Cond().And(
+		dbhelper.Cond().Eq("status", "active"),
+		dbhelper.Cond().Gt("age", 18),
+	),
+	dbhelper.Cond().And(
+		dbhelper.Cond().Eq("status", "pending"),
+		dbhelper.Cond().Lt("age", 18),
+	),
+).In("role", []interface{}{"admin", "user"}).Like("email", "%@example.com").Build()
+var set = dbhelper.Cond().Eq("age", 20).Build()
 
 func BenchmarkSqlParseCond(b *testing.B) {
 
@@ -99,13 +101,7 @@ func BenchmarkSqlParseCond(b *testing.B) {
 		b.Fatalf("获取驱动失败: %v", err)
 	}
 
-	where := mockSqlCondition()
-	set := &types.ConditionExpr{
-		Op: types.OpAnd,
-		Exprs: []*types.ConditionExpr{
-			{Op: types.OpEq, Field: "age", Value: 20},
-		},
-	}
+	where := condition
 
 	b.Run("ParseAndCache", func(b *testing.B) {
 		b.ResetTimer()
@@ -134,13 +130,7 @@ func BenchmarkSqlParseComplexCond(b *testing.B) {
 		b.Fatalf("获取驱动失败: %v", err)
 	}
 
-	where := mockComplexCondition()
-	set := &types.ConditionExpr{
-		Op: types.OpAnd,
-		Exprs: []*types.ConditionExpr{
-			{Op: types.OpEq, Field: "age", Value: 20},
-		},
-	}
+	where := complexCondition
 
 	b.Run("ParseAndCache", func(b *testing.B) {
 		b.ResetTimer()

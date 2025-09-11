@@ -17,9 +17,7 @@ var complexCondition = dbhelper.Cond().Or(
 		dbhelper.Cond().Eq("status", "pending"),
 		dbhelper.Cond().Lt("age", 18),
 	),
-	dbhelper.Cond().In("role", []interface{}{"admin", "user"}),
-	dbhelper.Cond().Like("email", "%@example.com"),
-).Build()
+).In("role", []interface{}{"admin", "user"}).Like("email", "%@example.com").Build()
 var set = dbhelper.Cond().Eq("age", 20).Build()
 
 func BenchmarkJsonParseCond(b *testing.B) {
@@ -50,12 +48,6 @@ func BenchmarkJsonParseCond(b *testing.B) {
 func BenchmarkJsonParseComplexCond(b *testing.B) {
 	p := &parser.JsonParser{DriverName: "json", DriverID: 1}
 	where := complexCondition
-	set := &types.ConditionExpr{
-		Op: types.OpAnd,
-		Exprs: []*types.ConditionExpr{
-			{Op: types.OpEq, Field: "age", Value: 20},
-		},
-	}
 
 	b.Run("Parse", func(b *testing.B) {
 		b.ResetTimer()

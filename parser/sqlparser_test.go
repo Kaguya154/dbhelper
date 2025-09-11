@@ -46,12 +46,6 @@ func BenchmarkSqlParseComplexCond(b *testing.B) {
 		QuoteFunc:  quoteSql,
 	}
 	where := complexCondition
-	set := &types.ConditionExpr{
-		Op: types.OpAnd,
-		Exprs: []*types.ConditionExpr{
-			{Op: types.OpEq, Field: "age", Value: 20},
-		},
-	}
 
 	b.Run("Parse", func(b *testing.B) {
 		b.ResetTimer()
