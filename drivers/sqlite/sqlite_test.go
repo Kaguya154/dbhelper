@@ -68,6 +68,25 @@ func TestCondBuilder(t *testing.T) {
 	}
 	t.Logf("生成的Exec SQL: %s", execSQL)
 
+	var complexCondition = dbhelper.Cond().Or(
+		dbhelper.Cond().And(
+			dbhelper.Cond().Eq("status", "active"),
+			dbhelper.Cond().Gt("age", 18),
+		),
+		dbhelper.Cond().And(
+			dbhelper.Cond().Eq("status", "pending"),
+			dbhelper.Cond().Lt("age", 18),
+		),
+		dbhelper.Cond().In("role", []interface{}{"admin", "user"}),
+		dbhelper.Cond().Like("email", "%@example.com"),
+	).Build()
+	t.Log("测试复杂条件")
+	complexSQL, complexArgs, err := driver.Parser().ParseAndCache(types.OpQuery, complexCondition, nil)
+	if err != nil {
+		t.Fatalf("解析复杂条件失败: %v", err)
+	}
+	t.Logf("生成的复杂查询SQL: %s", complexSQL)
+	t.Logf("生成的复杂查询Args: %v", complexArgs)
 }
 
 func TestSQLiteDriver_CRUD(t *testing.T) {
