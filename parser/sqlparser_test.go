@@ -1,9 +1,10 @@
 package parser_test
 
 import (
-	"dbhelper/parser"
-	"dbhelper/types"
 	"testing"
+
+	"github.com/Kaguya154/dbhelper/parser"
+	"github.com/Kaguya154/dbhelper/types"
 )
 
 func quoteSql(field string) string {

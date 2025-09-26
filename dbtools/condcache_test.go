@@ -1,11 +1,12 @@
 package dbtools_test
 
 import (
-	"dbhelper"
-	"dbhelper/dbtools"
-	"dbhelper/drivers/sqlite"
-	"dbhelper/types"
 	"testing"
+
+	"github.com/Kaguya154/dbhelper"
+	"github.com/Kaguya154/dbhelper/dbtools"
+	"github.com/Kaguya154/dbhelper/drivers/sqlite"
+	"github.com/Kaguya154/dbhelper/types"
 )
 
 func init() {

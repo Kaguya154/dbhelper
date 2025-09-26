@@ -1,9 +1,10 @@
 package dbhelper
 
 import (
-	"dbhelper/types"
 	"fmt"
 	"sync"
+
+	"github.com/Kaguya154/dbhelper/types"
 )
 
 // 驱动注册表

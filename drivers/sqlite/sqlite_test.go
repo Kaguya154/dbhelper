@@ -1,9 +1,9 @@
 package sqlite_test
 
 import (
-	"dbhelper"
-	"dbhelper/drivers/sqlite"
-	"dbhelper/types"
+	"github.com/Kaguya154/dbhelper"
+	"github.com/Kaguya154/dbhelper/drivers/sqlite"
+	"github.com/Kaguya154/dbhelper/types"
 	"testing"
 )
 

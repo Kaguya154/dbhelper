@@ -1,10 +1,11 @@
 package mysql_test
 
 import (
-	"dbhelper"
-	"dbhelper/drivers/mysql"
-	"dbhelper/types"
 	"testing"
+
+	"github.com/Kaguya154/dbhelper"
+	"github.com/Kaguya154/dbhelper/drivers/mysql"
+	"github.com/Kaguya154/dbhelper/types"
 )
 
 func init() {

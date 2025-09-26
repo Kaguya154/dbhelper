@@ -1,10 +1,11 @@
 package parser_test
 
 import (
-	"dbhelper"
-	"dbhelper/parser"
-	"dbhelper/types"
 	"testing"
+
+	"github.com/Kaguya154/dbhelper"
+	"github.com/Kaguya154/dbhelper/parser"
+	"github.com/Kaguya154/dbhelper/types"
 )
 
 var condition = dbhelper.Cond().Or(dbhelper.Cond().Eq("id", 123).Eq("name", "test")).Build()

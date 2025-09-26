@@ -1,10 +1,11 @@
 package postgresql_test
 
 import (
-	"dbhelper"
-	"dbhelper/drivers/postgresql"
-	"dbhelper/types"
 	"testing"
+
+	"github.com/Kaguya154/dbhelper"
+	"github.com/Kaguya154/dbhelper/drivers/postgresql"
+	"github.com/Kaguya154/dbhelper/types"
 )
 
 func init() {

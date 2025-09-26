@@ -2,9 +2,10 @@ package postgresql
 
 import (
 	"database/sql"
-	"dbhelper/parser"
-	"dbhelper/types"
 	"fmt"
+
+	"github.com/Kaguya154/dbhelper/parser"
+	"github.com/Kaguya154/dbhelper/types"
 
 	_ "github.com/lib/pq"
 )

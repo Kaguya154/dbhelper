@@ -1,11 +1,12 @@
 package parser
 
 import (
-	"dbhelper/dbtools"
-	"dbhelper/types"
 	"encoding/json"
 	"fmt"
 	"sync"
+
+	"github.com/Kaguya154/dbhelper/dbtools"
+	"github.com/Kaguya154/dbhelper/types"
 )
 
 type JsonParser struct {

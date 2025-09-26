@@ -1,10 +1,11 @@
 package parser
 
 import (
-	"dbhelper/dbtools"
-	"dbhelper/types"
 	"fmt"
 	"strings"
+
+	"github.com/Kaguya154/dbhelper/dbtools"
+	"github.com/Kaguya154/dbhelper/types"
 )
 
 type SQLParser struct {

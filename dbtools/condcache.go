@@ -1,11 +1,12 @@
 package dbtools
 
 import (
-	"dbhelper/types"
 	"sync"
 	"sync/atomic"
 	"time"
 	"unsafe"
+
+	"github.com/Kaguya154/dbhelper/types"
 )
 
 type CondCache struct {
